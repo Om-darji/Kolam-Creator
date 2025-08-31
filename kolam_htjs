@@ -81,7 +81,7 @@
                                 <p><strong>Overall Shape:</strong> <span id="grid-shape">-</span></p>
                             </div>
                             <div id="principle2">
-                                <h4 class="font-semibold text-gray-700">Symmetry Analysis:</h4>
+                                <h4 class="font-semibold text-gray-700">Symmetry Analysis (of Recreated Pattern):</h4>
                                 <div id="symmetry-results" class="text-sm mt-2 space-y-1"></div>
                             </div>
                         </div>
@@ -129,7 +129,7 @@
                 generatorSection.classList.remove('hidden');
                 btnGenerator.classList.add('active-mode');
                 btnAnalyzer.classList.remove('active-mode');
-                if (p5Instance) p5Instance.loop();
+                if (p5Instance) { p5Instance.loop(); p5Instance.redraw(); }
             } else {
                 generatorSection.classList.add('hidden');
                 analyzerSection.classList.remove('hidden');
@@ -219,7 +219,7 @@
                 cv.erode(thresh, tracedImg, kernel);
                 kernel.delete();
 
-                const analysisReport = analyzeGridAndSymmetry(dotCoords, thresh);
+                const analysisReport = analyzeGridAndSymmetry(dotCoords);
                 analysisReport.method = method;
                 
                 window.lastAnalysisReport = analysisReport;
@@ -272,8 +272,8 @@
             dst.delete(); return { dots, radii };
         }
 
-        function analyzeGridAndSymmetry(dotCoords, binaryImg) {
-            let gridDims = 'N/A', gridType = 'N/A', idealGrid = [], gridShape = 'N/A', gridSpacing = 0, side = 0;
+        function analyzeGridAndSymmetry(dotCoords) {
+            let gridDims = 'N/A', gridType = 'N/A', idealGrid = [], gridShape = 'N/A', gridSpacing = 0, side = 0, hScore=0, vScore=0;
             if (dotCoords.length >= 4) {
                 const centroid = dotCoords.reduce((acc, p) => ({x: acc.x + p.x, y: acc.y + p.y}), {x:0, y:0});
                 centroid.x /= dotCoords.length; centroid.y /= dotCoords.length;
@@ -333,12 +333,27 @@
                         gridType = "Reconstructed";
                     }
                 }
+                
+                const xs = idealGrid.map(p => p.x), ys = idealGrid.map(p => p.y);
+                const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+                const padding = 20; const w = maxX - minX + 2 * padding, h = maxY - minY + 2 * padding;
+                let idealBinary = cv.Mat.zeros(Math.ceil(h), Math.ceil(w), cv.CV_8U);
+                const white = new cv.Scalar(255);
+                idealGrid.forEach(pt => cv.circle(idealBinary, new cv.Point(pt.x - minX + padding, pt.y - minY + padding), 4, white, -1));
+                
+                const totalPixels = idealBinary.rows * idealBinary.cols;
+                if (totalPixels > 0) {
+                    let hFlipped = new cv.Mat(); cv.flip(idealBinary, hFlipped, 1);
+                    let vFlipped = new cv.Mat(); cv.flip(idealBinary, vFlipped, 0);
+                    let diffH = new cv.Mat(); cv.absdiff(idealBinary, hFlipped, diffH);
+                    let diffV = new cv.Mat(); cv.absdiff(idealBinary, vFlipped, diffV);
+                    hScore = 1 - (cv.countNonZero(diffH) / totalPixels);
+                    vScore = 1 - (cv.countNonZero(diffV) / totalPixels);
+                    hFlipped.delete(); vFlipped.delete(); diffH.delete(); diffV.delete();
+                }
+                idealBinary.delete();
             }
-            const h = binaryImg.rows, w = binaryImg.cols, totalPixels = h * w;
-            let hFlipped = new cv.Mat(); cv.flip(binaryImg, hFlipped, 1); let vFlipped = new cv.Mat(); cv.flip(binaryImg, vFlipped, 0);
-            let diffH = new cv.Mat(); cv.absdiff(binaryImg, hFlipped, diffH); let diffV = new cv.Mat(); cv.absdiff(binaryImg, vFlipped, diffV);
-            const hScore = 1 - (cv.countNonZero(diffH) / totalPixels); const vScore = 1 - (cv.countNonZero(diffV) / totalPixels);
-            hFlipped.delete(); vFlipped.delete(); diffH.delete(); diffV.delete();
+            
             return { gridDims, gridType, hScore, vScore, idealGrid, gridShape, gridSpacing, side };
         }
 
@@ -387,12 +402,12 @@
     <script>
         const sketch = (p) => {
             const canvasSize = 500;
+            let currentPatternFunc;
 
             p.setup = function() {
                 const container = document.getElementById('generator-canvas-container');
                 const canvas = p.createCanvas(canvasSize, canvasSize);
                 canvas.parent(container);
-                p.rectMode(p.CENTER);
                 p.noLoop();
                 p.redraw();
             };
@@ -400,11 +415,15 @@
             p.draw = function() {
                 p.background(70, 50, 70);
                 p.stroke(255);
-                let gridCenterX, gridCenterY, p_val;
+                p.noFill();
+                p.strokeWeight(1.5); // Thinner line
+
+                let grid = [];
+                let spacing = 40;
 
                 if (customGridData && customGridData.idealGrid.length > 0) {
-                    const grid = customGridData.idealGrid;
-                    const bounds = grid.reduce((acc, pt) => ({
+                    const report = customGridData;
+                    const bounds = report.idealGrid.reduce((acc, pt) => ({
                         minX: Math.min(acc.minX, pt.x), maxX: Math.max(acc.maxX, pt.x),
                         minY: Math.min(acc.minY, pt.y), maxY: Math.max(acc.maxY, pt.y)
                     }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
@@ -415,54 +434,50 @@
                     const offsetX = (canvasSize - gridW * scale) / 2;
                     const offsetY = (canvasSize - gridH * scale) / 2;
 
-                    p.fill(255);
-                    p.noStroke();
-                    grid.forEach(dot => {
-                        p.circle((dot.x - bounds.minX) * scale + offsetX, (dot.y - bounds.minY) * scale + offsetY, 5);
+                    report.idealGrid.forEach(dot => {
+                        grid.push({
+                            x: (dot.x - bounds.minX) * scale + offsetX,
+                            y: (dot.y - bounds.minY) * scale + offsetY
+                        });
                     });
                     
-                    gridCenterX = offsetX + (gridW * scale / 2);
-                    gridCenterY = offsetY + (gridH * scale / 2);
-                    
-                    const scaledGridSpacing = customGridData.gridSpacing * scale;
-                    p_val = scaledGridSpacing / 2;
+                    spacing = report.gridSpacing * scale;
 
                 } else {
-                    const spacing = 40;
-                    const numDots = 10; 
+                    spacing = 40;
+                    const numDots = 10;
                     const gridWidth = numDots * spacing;
                     const offsetX = (canvasSize - gridWidth) / 2;
                     const offsetY = (canvasSize - gridWidth) / 2;
 
                     for (let x = 0; x <= numDots; x++) {
                         for (let y = 0; y <= numDots; y++) {
-                            p.fill(255);
-                            p.circle(x * spacing + offsetX, y * spacing + offsetY, 3);
+                            grid.push({x: x * spacing + offsetX, y: y * spacing + offsetY});
                         }
                     }
-                    gridCenterX = canvasSize / 2;
-                    gridCenterY = canvasSize / 2;
-                    p_val = spacing / 2; 
+                }
+                
+                p.push();
+                p.fill(255);
+                p.noStroke();
+                grid.forEach(dot => p.circle(dot.x, dot.y, 5));
+                p.pop();
+                
+                const mouseBoundaryX = canvasSize * 0.5;
+                const mouseBoundaryY = canvasSize * 0.5;
+
+                if (p.mouseX < mouseBoundaryX && p.mouseY < mouseBoundaryY) {
+                    currentPatternFunc = pattern1;
+                } else if (p.mouseX >= mouseBoundaryX && p.mouseY < mouseBoundaryY) {
+                    currentPatternFunc = pattern2;
+                } else if (p.mouseX < mouseBoundaryX && p.mouseY >= mouseBoundaryY) {
+                    currentPatternFunc = pattern3;
+                } else {
+                    currentPatternFunc = pattern4;
                 }
 
-                p.noFill();
-                p.stroke(255);
-                p.strokeWeight(2);
-                p.translate(gridCenterX, gridCenterY);
-                p.rotate(p.PI / 4);
-                
-                if (!p_val) p_val = 20; // Fallback p_val if it's not set
-                p.rect(0, 0, p_val, p_val);
-
-                const mouseBoundary = canvasSize * 0.25;
-                if ((p.mouseX > 0 && p.mouseX < mouseBoundary) || (p.mouseY > 0 && p.mouseY < mouseBoundary)) {
-                    kolam1(1, p_val);
-                } else if ((p.mouseX > mouseBoundary && p.mouseX < 2 * mouseBoundary) || (p.mouseY > mouseBoundary && p.mouseY < 2 * mouseBoundary)) {
-                    kolam2(2, p_val);
-                } else if ((p.mouseX > 2 * mouseBoundary && p.mouseX < 3 * mouseBoundary) || (p.mouseY > 2 * mouseBoundary && p.mouseY < 3 * mouseBoundary)) {
-                    kolam3(3, p_val);
-                } else {
-                    kolam4(4, p_val);
+                if (currentPatternFunc) {
+                    currentPatternFunc(grid, spacing);
                 }
             };
             
@@ -474,120 +489,75 @@
                 }
             }
 
-            function kolam1(x, p_val) {
-                p.rect(p_val, p_val, p_val, p_val, 0, x * p_val, x * p_val, x * p_val);
-                p.rect(-p_val, p_val, p_val, p_val, x * p_val, 0, x * p_val, x * p_val);
-                p.rect(-p_val, -p_val, p_val, p_val, x * p_val, x * p_val, 0, x * p_val);
-                p.rect(p_val, -p_val, p_val, p_val, x * p_val, x * p_val, x * p_val, 0);
+            function drawPath(points) {
+                if (points.length < 2) return;
+                p.beginShape();
+                p.curveVertex(points[0].x, points[0].y);
+                for(const pt of points) {
+                    p.curveVertex(pt.x, pt.y);
+                }
+                p.curveVertex(points[points.length-1].x, points[points.length-1].y);
+                p.endShape();
             }
 
-            function kolam2(x, p_val) {
-                p.push();
-                p.rect(x * p_val - x * p_val, x * p_val, p_val, p_val, 0, x * p_val, x * p_val, x * p_val);
-                p.rect(-x * p_val, x * p_val - x * p_val, p_val, p_val, x * p_val, 0, x * p_val, x * p_val);
-                p.rect(-x * p_val + x * p_val, -x * p_val, p_val, p_val, x * p_val, x * p_val, 0, x * p_val);
-                p.rect(x * p_val, -x * p_val + x * p_val, p_val, p_val, x * p_val, x * p_val, x * p_val, 0);
-                p.pop();
-                p.rect(p_val, p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(-p_val, p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(-p_val, -p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(p_val, -p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
+            function pattern1(grid, spacing) {
+                const s = spacing * 0.5;
+                const path = [
+                    { x: 0, y: -s }, { x: s, y: 0 }, { x: 0, y: s },
+                    { x: -s, y: 0 }, { x: 0, y: -s }
+                ];
+                grid.forEach(dot => {
+                    p.push();
+                    p.translate(dot.x, dot.y);
+                    drawPath(path);
+                    p.pop();
+                });
             }
 
-            function kolam3(x, p_val) {
-                p.push();
-                p.rect(-x * p_val + p_val, x * p_val - p_val, p_val, p_val, x * p_val, x * p_val, 0, x * p_val);
-                p.rect(-x * p_val + p_val, -x * p_val + p_val, p_val, p_val, x * p_val, x * p_val, x * p_val, 0);
-                p.rect(x * p_val - p_val, -x * p_val + p_val, p_val, p_val, 0, x * p_val, x * p_val, x * p_val);
-                p.rect(x * p_val - p_val, x * p_val - p_val, p_val, p_val, x * p_val, 0, x * p_val, x * p_val);
-                p.pop();
-                p.rect(p_val, p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(-p_val, p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(-p_val, -p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(p_val, -p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
-                p.rect(x * p_val - 3 * p_val, x * p_val + 1 * p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(-x * p_val - p_val, x * p_val - 3 * p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(-x * p_val + 3 * p_val, -x * p_val - 1 * p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(x * p_val + 1 * p_val, -x * p_val + 3 * p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
-                p.rect(x * p_val - 6 * p_val, x * p_val - 2 * p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(-x * p_val + 2 * p_val, x * p_val - 6 * p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(-x * p_val + 6 * p_val, -x * p_val + 2 * p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(x * p_val - 2 * p_val, -x * p_val + 6 * p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
-                p.rect(x * p_val - 1 * p_val, x * p_val - 3 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(-x * p_val + 1 * p_val, x * p_val - 3 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(-x * p_val + 3 * p_val, -x * p_val + 1 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(x * p_val - 3 * p_val, -x * p_val + 5 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(x * p_val - 6 * p_val, x * p_val - 4 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(-x * p_val + 4 * p_val, x * p_val - 6 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(-x * p_val + 6 * p_val, -x * p_val + 4 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(x * p_val - 4 * p_val, -x * p_val + 6 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
+            function pattern2(grid, spacing) {
+                 const s = spacing * 0.5;
+                 const path = [
+                    {x: -s, y: -s*2}, {x: -s, y: -s}, {x: s, y: s},
+                    {x: s, y: s*2}
+                 ];
+                 grid.forEach(dot => {
+                    p.push();
+                    p.translate(dot.x, dot.y);
+                    drawPath(path);
+                    p.rotate(p.PI/2);
+                    drawPath(path);
+                    p.pop();
+                 });
             }
-            
-            function kolam4(x, p_val) {
-                p.rect(x * p_val - 4 * p_val, x * p_val + 0 * p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(-x * p_val - 0 * p_val, x * p_val - 4 * p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(-x * p_val + 4 * p_val, -x * p_val - 0 * p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(x * p_val + 0 * p_val, -x * p_val + 4 * p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
-                p.rect(x * p_val - 7 * p_val, x * p_val - 3 * p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(-x * p_val + 3 * p_val, x * p_val - 7 * p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(-x * p_val + 7 * p_val, -x * p_val + 3 * p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(x * p_val - 3 * p_val, -x * p_val + 7 * p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
-                p.rect(x * p_val - 2 * p_val, x * p_val - 4 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(-x * p_val + 2 * p_val, x * p_val - 4 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(-x * p_val + 4 * p_val, -x * p_val + 2 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(x * p_val - 4 * p_val, -x * p_val + 6 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(x * p_val - 7 * p_val, x * p_val - 5 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(-x * p_val + 5 * p_val, x * p_val - 7 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(-x * p_val + 7 * p_val, -x * p_val + 5 * p_val, p_val, p_val, x * p_val, 0, p_val, 0);
-                p.rect(x * p_val - 5 * p_val, -x * p_val + 7 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(p_val, p_val, p_val, p_val, 0, 0, p_val, p_val);
-                p.rect(-p_val, p_val, p_val, p_val, p_val, 0, 0, p_val);
-                p.rect(-p_val, -p_val, p_val, p_val, p_val, p_val, 0, 0);
-                p.rect(p_val, -p_val, p_val, p_val, 0, p_val, p_val, 0);
-                p.push();
-                p.rect(-x * p_val + 8 * p_val, x * p_val - 6 * p_val, p_val, p_val, x * p_val, x * p_val, 0, x * p_val);
-                p.rect(-x * p_val + 6 * p_val, -x * p_val + 8 * p_val, p_val, p_val, x * p_val, x * p_val, x * p_val, 0);
-                p.rect(x * p_val - 8 * p_val, -x * p_val + 6 * p_val, p_val, p_val, 0, x * p_val, x * p_val, x * p_val);
-                p.rect(x * p_val - 6 * p_val, x * p_val - 8 * p_val, p_val, p_val, x * p_val, 0, x * p_val, x * p_val);
-                p.pop();
-                p.push();
-                p.push();
-                p.translate(2 * p_val, -6 * p_val);
-                p.rect(x * p_val - 4 * p_val, x * p_val + 0 * p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(x * p_val - 3 * p_val, -x * p_val + 7 * p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
-                p.rect(x * p_val - 4 * p_val, -x * p_val + 6 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.pop();
-                p.push();
-                p.translate(6 * p_val, 2 * p_val);
-                p.rect(-x * p_val - 0 * p_val, x * p_val - 4 * p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(x * p_val - 7 * p_val, x * p_val - 3 * p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(-x * p_val + 2 * p_val, x * p_val - 4 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.pop();
-                p.push();
-                p.translate(-2 * p_val, 6 * p_val);
-                p.rect(-x * p_val + 4 * p_val, -x * p_val - 0 * p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(-x * p_val + 3 * p_val, x * p_val - 7 * p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(-x * p_val + 4 * p_val, -x * p_val + 2 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.pop();
-                p.push();
-                p.translate(-6 * p_val, -2 * p_val);
-                p.rect(x * p_val + 0 * p_val, -x * p_val + 4 * p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
-                p.rect(-x * p_val + 7 * p_val, -x * p_val + 3 * p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(x * p_val - 2 * p_val, x * p_val - 4 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.pop();
-                p.pop();
-                p.rect(-x * p_val + 3 * p_val, -x * p_val + 9 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(x * p_val + 1 * p_val, x * p_val - 3 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(-x * p_val - 1 * p_val, x * p_val - 5 * p_val, p_val, p_val, x * p_val, 0, x * p_val, 0);
-                p.rect(x * p_val - 3 * p_val, -x * p_val - 1 * p_val, p_val, p_val, 0, x * p_val, 0, x * p_val);
-                p.rect(-x * p_val + 5 * p_val, -x * p_val + 9 * p_val, p_val, p_val, p_val, 0, p_val, 0);
-                p.rect(x * p_val + 1 * p_val, x * p_val - 5 * p_val, p_val, p_val, 0, p_val, 0, p_val);
-                p.rect(-x * p_val - 1 * p_val, x * p_val - 3 * p_val, p_val, p_val, 0, p_val, 0, p_val);
-                p.rect(x * p_val - 5 * p_val, -x * p_val - 1 * p_val, p_val, p_val, p_val, 0, p_val, 0);
-                p.rect(x * p_val - 4 * p_val, x * p_val + 2 * p_val, p_val, p_val, 0, 0, x * p_val, x * p_val);
-                p.rect(-x * p_val - 2 * p_val, x * p_val - 4 * p_val, p_val, p_val, x * p_val, 0, 0, x * p_val);
-                p.rect(-x * p_val + 4 * p_val, -x * p_val - 2 * p_val, p_val, p_val, x * p_val, x * p_val, 0, 0);
-                p.rect(x * p_val + 2 * p_val, -x * p_val + 4 * p_val, p_val, p_val, 0, x * p_val, x * p_val, 0);
+
+            function pattern3(grid, spacing) {
+                const s = spacing * 0.5;
+                const path = [
+                    {x: -s, y: -s}, {x: 0, y: -s*2}, {x: s, y: -s}, {x: s*2, y: 0},
+                    {x: s, y: s}, {x: 0, y: s*2}, {x: -s, y: s}, {x: -s*2, y: 0},
+                    {x: -s, y: -s}
+                ];
+                 grid.forEach(dot => {
+                    p.push();
+                    p.translate(dot.x, dot.y);
+                    drawPath(path);
+                    p.pop();
+                 });
+            }
+
+            function pattern4(grid, spacing) {
+                const s = spacing * 0.5;
+                const path = [
+                    {x: 0, y: -s*2}, {x: s, y: -s}, {x: s*2, y: 0},
+                    {x: s, y: s}, {x: 0, y: s*2}, {x: -s, y: s},
+                    {x: -s*2, y: 0}, {x: -s, y: -s}, {x: 0, y: -s*2}
+                ];
+                 grid.forEach(dot => {
+                    p.push();
+                    p.translate(dot.x, dot.y);
+                    drawPath(path);
+                    p.pop();
+                 });
             }
         };
         p5Instance = new p5(sketch);
