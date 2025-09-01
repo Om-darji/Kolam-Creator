@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kolam Art Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- p5.js library for the generator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.js"></script>
+    <!-- OpenCV.js library for the analyzer -->
+    <script async src="https://docs.opencv.org/4.9.0/opencv.js" onload="onOpenCvReady();"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loader {
+            border: 5px solid #f3f3f3; border-top: 5px solid #4f46e5;
+            border-radius: 50%; width: 50px; height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #generator-canvas-container { border: 1px solid #e5e7eb; border-radius: 0.5rem; overflow: hidden; display: inline-block; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        .mode-button.active-mode { background-color: white; color: #4f46e5; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); }
+        canvas { max-width: 100%; height: auto; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">Kolam Art Studio</h1>
+            <p class="text-lg text-gray-600 mt-2">Generate interactive patterns or analyze existing Kolam designs.</p>
+        </header>
+
+        <!-- Mode Switcher -->
+        <div class="flex justify-center mb-8 bg-gray-200 rounded-lg p-1 max-w-sm mx-auto">
+            <button id="btn-generator" class="mode-button w-1/2 py-2 px-4 rounded-md font-semibold active-mode">Generator</button>
+            <button id="btn-analyzer" class="mode-button w-1/2 py-2 px-4 rounded-md text-gray-600 font-semibold">Analyzer</button>
+        </div>
+
+        <main>
+            <!-- Generator Section -->
+            <div id="generator-section" class="text-center">
+                <h2 class="text-2xl font-semibold mb-4">Interactive Pattern Generator</h2>
+                <p id="generator-instructions" class="mb-4 text-gray-600">Move your mouse over the canvas to change the pattern.</p>
+                <div id="generator-canvas-container"></div>
+                <button id="reset-grid-btn" class="mt-4 bg-gray-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-600 transition-all hidden">Reset to Default Grid</button>
+            </div>
+
+            <!-- Analyzer Section (Hidden by default) -->
+            <div id="analyzer-section" class="hidden">
+                 <div id="upload-section" class="max-w-xl mx-auto bg-white p-8 rounded-xl shadow-lg text-center">
+                    <h2 class="text-2xl font-semibold mb-4">Kolam Image Analyzer</h2>
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 hover:border-indigo-500 transition-colors">
+                        <input type="file" id="image-upload" accept="image/*" class="hidden">
+                        <button id="upload-button" class="bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700 transition-all">
+                            Select Image to Analyze
+                        </button>
+                        <p id="file-name" class="mt-4 text-gray-500">No file chosen</p>
+                    </div>
+                </div>
+    
+                <div id="loader-section" class="text-center py-10 hidden">
+                     <div class="loader inline-block"></div>
+                     <p class="mt-4 text-lg text-gray-600">Analyzing Kolam... This may take a moment.</p>
+                </div>
+    
+                <div id="results-section" class="mt-12 hidden">
+                    <h2 class="text-3xl font-bold text-center mb-8">Analysis Results</h2>
+                     <div class="text-center mb-8">
+                        <button id="use-grid-btn" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-all">
+                            Use this Grid in Generator
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                        <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg">
+                            <h3 class="text-xl font-semibold mb-3 border-b pb-2">Analysis Report</h3>
+                            <div id="principle1" class="mb-4 space-y-1">
+                                <p><strong>Detection Method:</strong> <span id="detection-method">-</span></p>
+                                <p><strong>Detected Dots:</strong> <span id="dot-count">-</span></p>
+                                <p><strong>Grid Dimensions:</strong> <span id="grid-dims">-</span></p>
+                                <p><strong>Grid Type:</strong> <span id="grid-type">-</span></p>
+                                <p><strong>Overall Shape:</strong> <span id="grid-shape">-</span></p>
+                            </div>
+                            <div id="principle2">
+                                <h4 class="font-semibold text-gray-700">Symmetry Analysis (of Recreated Pattern):</h4>
+                                <div id="symmetry-results" class="text-sm mt-2 space-y-1"></div>
+                            </div>
+                        </div>
+    
+                        <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="bg-white p-4 rounded-xl shadow-lg text-center">
+                                <h4 class="font-semibold mb-2">Original Image</h4>
+                                <canvas id="canvas-original"></canvas>
+                            </div>
+                            <div class="bg-white p-4 rounded-xl shadow-lg text-center">
+                                <h4 class="font-semibold mb-2">Identified Grid</h4>
+                                <canvas id="canvas-identified"></canvas>
+                            </div>
+                            <div class="bg-white p-4 rounded-xl shadow-lg text-center">
+                                <h4 class="font-semibold mb-2">Recreated Pattern</h4>
+                                <canvas id="canvas-recreated"></canvas>
+                            </div>
+                             <div class="bg-white p-4 rounded-xl shadow-lg text-center">
+                                <h4 class="font-semibold mb-2">Traced Pattern</h4>
+                                <canvas id="canvas-traced"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- GLOBAL STATE ---
+        let p5Instance = null;
+        let customGridData = null;
+
+        // --- MODE SWITCHING LOGIC ---
+        const btnGenerator = document.getElementById('btn-generator');
+        const btnAnalyzer = document.getElementById('btn-analyzer');
+        const generatorSection = document.getElementById('generator-section');
+        const analyzerSection = document.getElementById('analyzer-section');
+        const useGridBtn = document.getElementById('use-grid-btn');
+        const resetGridBtn = document.getElementById('reset-grid-btn');
+
+        function switchMode(mode) {
+            if (mode === 'generator') {
+                analyzerSection.classList.add('hidden');
+                generatorSection.classList.remove('hidden');
+                btnGenerator.classList.add('active-mode');
+                btnAnalyzer.classList.remove('active-mode');
+                if (p5Instance) { p5Instance.loop(); p5Instance.redraw(); }
+            } else {
+                generatorSection.classList.add('hidden');
+                analyzerSection.classList.remove('hidden');
+                btnAnalyzer.classList.add('active-mode');
+                btnGenerator.classList.remove('active-mode');
+                if (p5Instance) p5Instance.noLoop();
+            }
+        }
+        btnGenerator.addEventListener('click', () => switchMode('generator'));
+        btnAnalyzer.addEventListener('click', () => switchMode('analyzer'));
+        
+        useGridBtn.addEventListener('click', () => {
+            if (window.lastAnalysisReport) {
+                customGridData = window.lastAnalysisReport;
+                switchMode('generator');
+                resetGridBtn.classList.remove('hidden');
+                if (p5Instance) p5Instance.redraw();
+            }
+        });
+
+        resetGridBtn.addEventListener('click', () => {
+            customGridData = null;
+            resetGridBtn.classList.add('hidden');
+            if (p5Instance) p5Instance.redraw();
+        });
+        
+        // --- ANALYZER LOGIC ---
+        const uploadButton = document.getElementById('upload-button');
+        const imageUpload = document.getElementById('image-upload');
+        const fileNameEl = document.getElementById('file-name');
+        const loaderSection = document.getElementById('loader-section');
+        const resultsSection = document.getElementById('results-section');
+
+        uploadButton.addEventListener('click', () => imageUpload.click());
+        imageUpload.addEventListener('change', handleImageUpload);
+
+        let cvReady = false;
+        function onOpenCvReady() {
+            cv['onRuntimeInitialized'] = () => {
+                console.log('OpenCV.js is ready.');
+                uploadButton.disabled = false;
+                uploadButton.textContent = 'Select Image to Analyze';
+                cvReady = true;
+            };
+        }
+        
+        uploadButton.disabled = true;
+        uploadButton.textContent = 'Loading CV Library...';
+
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            fileNameEl.textContent = file.name;
+            loaderSection.classList.remove('hidden');
+            resultsSection.classList.add('hidden');
+            const reader = new FileReader();
+            reader.onload = e => {
+                const img = new Image();
+                img.onload = () => setTimeout(() => analyzeImage(img), 100);
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function analyzeImage(imageElement) {
+            if (!cvReady) {
+                alert('OpenCV is still loading. Please wait a moment and try again.');
+                return;
+            }
+            try {
+                let src = cv.imread(imageElement);
+                let gray = new cv.Mat();
+                let thresh = new cv.Mat();
+                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+
+                const h = gray.rows, w = gray.cols;
+                const corners = [gray.ucharAt(0, 0), gray.ucharAt(0, w - 1), gray.ucharAt(h - 1, 0), gray.ucharAt(h - 1, w - 1)];
+                const meanCorners = corners.reduce((a, b) => a + b, 0) / corners.length;
+                const thresholdType = meanCorners > 127 ? cv.THRESH_BINARY_INV : cv.THRESH_BINARY;
+                cv.threshold(gray, thresh, 0, 255, thresholdType | cv.THRESH_OTSU);
+
+                let detectionResult = masterDotDetector(gray, thresh);
+                let { dots: dotCoords, radii: dotRadii, method } = detectionResult;
+
+                let tracedImg = new cv.Mat();
+                let kernel = cv.Mat.ones(2, 2, cv.CV_8U);
+                cv.erode(thresh, tracedImg, kernel);
+                kernel.delete();
+
+                const analysisReport = analyzeGridAndSymmetry(dotCoords);
+                analysisReport.method = method;
+                
+                window.lastAnalysisReport = analysisReport;
+                displayResults(src, dotCoords, dotRadii, tracedImg, analysisReport);
+
+                src.delete(); gray.delete(); thresh.delete(); tracedImg.delete();
+
+            } catch (error) {
+                console.error("Analysis Error:", error);
+                alert('An error occurred. Check the console.');
+            } finally {
+                loaderSection.classList.add('hidden');
+                resultsSection.classList.remove('hidden');
+            }
+        }
+        
+        function masterDotDetector(grayImg, binaryImg) {
+            let result;
+            result = detectDotsWithHarris(grayImg);
+            if (result.dots.length > 5) { result.method = "Harris Corners"; return result; }
+            result = detectDotsWithHough(grayImg);
+            if (result.dots.length > 5) { result.method = "Hough Circles"; return result; }
+            result = detectDotsWithContours(binaryImg);
+            result.method = "Contour Analysis"; return result;
+        }
+
+        function detectDotsWithHough(grayImg) {
+            let circles = new cv.Mat(); let dots = [], radii = []; const h = grayImg.rows, w = grayImg.cols;
+            const min_dist = Math.floor(Math.min(h, w) / 40); const min_radius = Math.floor(Math.min(h, w) / 150); const max_radius = Math.floor(Math.min(h, w) / 20);
+            cv.HoughCircles(grayImg, circles, cv.HOUGH_GRADIENT, 1, min_dist, 75, 15, min_radius, max_radius);
+            if (circles.cols > 0) { for (let i = 0; i < circles.cols; ++i) { let c = circles.data32F; dots.push({ x: c[i * 3], y: c[i * 3 + 1] }); radii.push(c[i * 3 + 2]); } }
+            circles.delete(); return { dots, radii };
+        }
+
+        function detectDotsWithContours(binaryImg) {
+            let contours = new cv.MatVector(); let hierarchy = new cv.Mat(); cv.findContours(binaryImg, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            let dots = [], radii = []; const h = binaryImg.rows, w = binaryImg.cols; const minArea = Math.pow(Math.min(h, w) / 150, 2) * Math.PI; const maxArea = Math.pow(Math.min(h, w) / 25, 2) * Math.PI;
+            for (let i = 0; i < contours.size(); ++i) { const cnt = contours.get(i); const area = cv.contourArea(cnt, false);
+                if (area > minArea && area < maxArea) { const p = cv.arcLength(cnt, true); if (p > 0) { const circ = (4 * Math.PI * area) / (p * p); const r = cv.boundingRect(cnt); const asp = r.width / r.height; const M = cv.moments(cnt, false); const sol = M.m00 > 0 ? area / M.m00 : 0;
+                        if (circ > 0.7 && asp > 0.7 && asp < 1.3 && sol > 0.9) { dots.push({ x: M.m10 / M.m00, y: M.m01 / M.m00 }); radii.push(Math.sqrt(area / Math.PI)); } } } }
+            contours.delete(); hierarchy.delete(); return { dots, radii };
+        }
+
+        function detectDotsWithHarris(grayImg) {
+            let dst = new cv.Mat(); cv.cornerHarris(grayImg, dst, 2, 3, 0.04); cv.normalize(dst, dst, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
+            let dots = [], radii = []; const threshold = 150, minDistance = 10;
+            for (let i = 0; i < dst.rows; i++) { for (let j = 0; j < dst.cols; j++) { if (dst.ucharAt(i, j) > threshold) {
+                        let isFarEnough = true; for(const pt of dots) { if (Math.hypot(j - pt.x, i - pt.y) < minDistance) { isFarEnough = false; break; } }
+                        if(isFarEnough) { dots.push({x: j, y: i}); radii.push(5); } } } }
+            dst.delete(); return { dots, radii };
+        }
+
+        function analyzeGridAndSymmetry(dotCoords) {
+            let gridDims = 'N/A', gridType = 'N/A', idealGrid = [], gridShape = 'N/A', gridSpacing = 0, side = 0, hScore=0, vScore=0;
+            if (dotCoords.length >= 4) {
+                const centroid = dotCoords.reduce((acc, p) => ({x: acc.x + p.x, y: acc.y + p.y}), {x:0, y:0});
+                centroid.x /= dotCoords.length; centroid.y /= dotCoords.length;
+                const distancesFromCenter = dotCoords.map(p => Math.hypot(p.x - centroid.x, p.y - centroid.y));
+                const avgRadius = distancesFromCenter.reduce((a,b) => a+b, 0) / distancesFromCenter.length;
+                const stdDev = Math.sqrt(distancesFromCenter.map(d => Math.pow(d - avgRadius, 2)).reduce((a,b) => a+b,0) / distancesFromCenter.length);
+
+                if (stdDev / avgRadius < 0.15) {
+                    gridShape = "Circular";
+                    idealGrid = dotCoords.map(p => ({ x: p.x, y: p.y })); 
+                    gridDims = `${dotCoords.length} dots`;
+                    gridType = "Radial";
+                    if (dotCoords.length > 1) {
+                        const sortedDots = [...idealGrid].sort((a, b) => {
+                            const angleA = Math.atan2(a.y - centroid.y, a.x - centroid.x);
+                            const angleB = Math.atan2(b.y - centroid.y, b.x - centroid.x);
+                            return angleA - angleB;
+                        });
+                        let totalArcLength = 0;
+                        for (let i = 0; i < sortedDots.length; i++) {
+                            const p1 = sortedDots[i];
+                            const p2 = sortedDots[(i + 1) % sortedDots.length];
+                            totalArcLength += Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                        }
+                        gridSpacing = totalArcLength / sortedDots.length;
+                    }
+                    side = dotCoords.length;
+                } else {
+                    const points = new cv.Mat(dotCoords.length, 1, cv.CV_32SC2);
+                    for(let i = 0; i < dotCoords.length; i++) { points.data32S[i*2] = dotCoords[i].x; points.data32S[i*2+1] = dotCoords[i].y; }
+                    const rotRect = cv.minAreaRect(points);
+                    points.delete();
+                    const angle = Math.abs(rotRect.angle);
+                    const isDiamond = angle > 30 && angle < 60;
+                    gridShape = isDiamond ? "Diamond" : "Square/Rectangle";
+                    const distances = [];
+                    for (let i = 0; i < dotCoords.length; i++) { for (let j = i + 1; j < dotCoords.length; j++) { distances.push(Math.round(Math.hypot(dotCoords[i].x - dotCoords[j].x, dotCoords[i].y - dotCoords[j].y))); } }
+                    const distCounts = distances.reduce((acc, val) => { acc[val] = (acc[val] || 0) + 1; return acc; }, {}); delete distCounts[0];
+                    if(Object.keys(distCounts).length > 0) {
+                        gridSpacing = parseInt(Object.keys(distCounts).reduce((a, b) => distCounts[a] > distCounts[b] ? a : b));
+                        side = Math.round(Math.sqrt(dotCoords.length));
+                        gridDims = `${side} x ${side} (ideal)`;
+                        const halfSide = Math.floor(side / 2);
+                        for (let r = 0; r < side; r++) {
+                            for (let c = 0; c < side; c++) {
+                                let baseX = (c - halfSide) * gridSpacing;
+                                let baseY = (r - halfSide) * gridSpacing;
+                                let x = baseX, y = baseY;
+                                if (isDiamond) {
+                                    const rad = -Math.PI / 4;
+                                    x = baseX * Math.cos(rad) - baseY * Math.sin(rad);
+                                    y = baseX * Math.sin(rad) + baseY * Math.cos(rad);
+                                }
+                                idealGrid.push({ x: x + rotRect.center.x, y: y + rotRect.center.y });
+                            }
+                        }
+                        gridType = "Reconstructed";
+                    }
+                }
+                
+                const xs = idealGrid.map(p => p.x), ys = idealGrid.map(p => p.y);
+                const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+                const padding = 20; const w = maxX - minX + 2 * padding, h = maxY - minY + 2 * padding;
+                let idealBinary = cv.Mat.zeros(Math.ceil(h), Math.ceil(w), cv.CV_8U);
+                const white = new cv.Scalar(255);
+                idealGrid.forEach(pt => cv.circle(idealBinary, new cv.Point(pt.x - minX + padding, pt.y - minY + padding), 4, white, -1));
+                
+                const totalPixels = idealBinary.rows * idealBinary.cols;
+                if (totalPixels > 0) {
+                    let hFlipped = new cv.Mat(); cv.flip(idealBinary, hFlipped, 1);
+                    let vFlipped = new cv.Mat(); cv.flip(idealBinary, vFlipped, 0);
+                    let diffH = new cv.Mat(); cv.absdiff(idealBinary, hFlipped, diffH);
+                    let diffV = new cv.Mat(); cv.absdiff(idealBinary, vFlipped, diffV);
+                    hScore = 1 - (cv.countNonZero(diffH) / totalPixels);
+                    vScore = 1 - (cv.countNonZero(diffV) / totalPixels);
+                    hFlipped.delete(); vFlipped.delete(); diffH.delete(); diffV.delete();
+                }
+                idealBinary.delete();
+            }
+            
+            return { gridDims, gridType, hScore, vScore, idealGrid, gridShape, gridSpacing, side };
+        }
+
+        function displayResults(src, dotCoords, dotRadii, tracedImg, report) {
+            cv.imshow('canvas-original', src);
+            let identified = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, [255, 255, 255, 255]);
+            const dotColor = new cv.Scalar(0, 0, 0, 255);
+            dotCoords.forEach((pt) => cv.circle(identified, new cv.Point(pt.x, pt.y), 4, dotColor, -1));
+            cv.imshow('canvas-identified', identified);
+            identified.delete();
+            const recCanvas = document.getElementById('canvas-recreated');
+            const ctx = recCanvas.getContext('2d');
+            const idealGrid = report.idealGrid || [];
+            if(idealGrid.length > 0) {
+                if (report.gridShape === 'Circular') {
+                    const centroid = idealGrid.reduce((acc, p) => ({x: acc.x + p.x, y: acc.y + p.y}), {x:0, y:0});
+                    centroid.x /= idealGrid.length; centroid.y /= idealGrid.length;
+                    const avgRadius = idealGrid.map(p => Math.hypot(p.x - centroid.x, p.y - centroid.y)).reduce((a,b) => a+b,0) / idealGrid.length;
+                    const padding = 20; const w = avgRadius * 2 + padding * 2, h = avgRadius * 2 + padding * 2;
+                    recCanvas.width = w; recCanvas.height = h; ctx.fillStyle = 'white'; ctx.fillRect(0, 0, w, h); ctx.fillStyle = 'black';
+                    const numDots = idealGrid.length;
+                    for (let i = 0; i < numDots; i++) { const angle = (i / numDots) * 2 * Math.PI; const x = w / 2 + avgRadius * Math.cos(angle); const y = h / 2 + avgRadius * Math.sin(angle);
+                        ctx.beginPath(); ctx.arc(x, y, 4, 0, 2 * Math.PI); ctx.fill(); }
+                    report.idealGrid = [];
+                    for (let i = 0; i < numDots; i++) { const angle = (i / numDots) * 2 * Math.PI;
+                        report.idealGrid.push({ x: w / 2 + avgRadius * Math.cos(angle), y: h / 2 + avgRadius * Math.sin(angle) }); }
+                } else {
+                    const xs = idealGrid.map(p => p.x), ys = idealGrid.map(p => p.y);
+                    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+                    const padding = 20; const w = maxX - minX + 2 * padding, h = maxY - minY + 2 * padding;
+                    recCanvas.width = w; recCanvas.height = h; ctx.fillStyle = 'white'; ctx.fillRect(0, 0, w, h); ctx.fillStyle = 'black';
+                    idealGrid.forEach(pt => { ctx.beginPath(); ctx.arc(pt.x - minX + padding, pt.y - minY + padding, 4, 0, 2 * Math.PI); ctx.fill(); });
+                }
+            } else { recCanvas.width=200; recCanvas.height=100; ctx.clearRect(0, 0, recCanvas.width, recCanvas.height); ctx.fillText("No dots found", 10, 50); }
+            cv.imshow('canvas-traced', tracedImg);
+            document.getElementById('detection-method').textContent = report.method;
+            document.getElementById('dot-count').textContent = dotCoords.length;
+            document.getElementById('grid-dims').textContent = report.gridDims;
+            document.getElementById('grid-type').textContent = report.gridType;
+            document.getElementById('grid-shape').textContent = report.gridShape;
+            document.getElementById('symmetry-results').innerHTML = `<p>Horizontal: <span class="font-mono">${(report.hScore * 100).toFixed(1)}%</span> match</p><p>Vertical: <span class="font-mono">${(report.vScore * 100).toFixed(1)}%</span> match</p>`;
+        }
+    </script>
+    
+    <!-- SCRIPT FOR P5.JS GENERATOR -->
+    <script>
+        const sketch = (p) => {
+            const canvasSize = 500;
+            let currentPatternFunc;
+
+            p.setup = function() {
+                const container = document.getElementById('generator-canvas-container');
+                const canvas = p.createCanvas(canvasSize, canvasSize);
+                canvas.parent(container);
+                p.noLoop();
+                p.redraw();
+            };
+
+            p.draw = function() {
+                p.background(70, 50, 70);
+                p.stroke(255);
+                p.noFill();
+                p.strokeWeight(1.5); // Thinner line
+
+                let grid = [];
+                let spacing = 40;
+
+                if (customGridData && customGridData.idealGrid.length > 0) {
+                    const report = customGridData;
+                    const bounds = report.idealGrid.reduce((acc, pt) => ({
+                        minX: Math.min(acc.minX, pt.x), maxX: Math.max(acc.maxX, pt.x),
+                        minY: Math.min(acc.minY, pt.y), maxY: Math.max(acc.maxY, pt.y)
+                    }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+                    
+                    const gridW = bounds.maxX - bounds.minX || 1;
+                    const gridH = bounds.maxY - bounds.minY || 1;
+                    const scale = Math.min((canvasSize - 60) / gridW, (canvasSize - 60) / gridH);
+                    const offsetX = (canvasSize - gridW * scale) / 2;
+                    const offsetY = (canvasSize - gridH * scale) / 2;
+
+                    report.idealGrid.forEach(dot => {
+                        grid.push({
+                            x: (dot.x - bounds.minX) * scale + offsetX,
+                            y: (dot.y - bounds.minY) * scale + offsetY
+                        });
+                    });
+                    
+                    spacing = report.gridSpacing * scale;
+
+                } else {
+                    spacing = 40;
+                    const numDots = 10;
+                    const gridWidth = numDots * spacing;
+                    const offsetX = (canvasSize - gridWidth) / 2;
+                    const offsetY = (canvasSize - gridWidth) / 2;
+
+                    for (let x = 0; x <= numDots; x++) {
+                        for (let y = 0; y <= numDots; y++) {
+                            grid.push({x: x * spacing + offsetX, y: y * spacing + offsetY});
+                        }
+                    }
+                }
+                
+                p.push();
+                p.fill(255);
+                p.noStroke();
+                grid.forEach(dot => p.circle(dot.x, dot.y, 5));
+                p.pop();
+                
+                const mouseBoundaryX = canvasSize * 0.5;
+                const mouseBoundaryY = canvasSize * 0.5;
+
+                if (p.mouseX < mouseBoundaryX && p.mouseY < mouseBoundaryY) {
+                    currentPatternFunc = pattern1;
+                } else if (p.mouseX >= mouseBoundaryX && p.mouseY < mouseBoundaryY) {
+                    currentPatternFunc = pattern2;
+                } else if (p.mouseX < mouseBoundaryX && p.mouseY >= mouseBoundaryY) {
+                    currentPatternFunc = pattern3;
+                } else {
+                    currentPatternFunc = pattern4;
+                }
+
+                if (currentPatternFunc) {
+                    currentPatternFunc(grid, spacing);
+                }
+            };
+            
+            p.mouseMoved = function() {
+                if (p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height) {
+                    p.loop();
+                } else {
+                    p.noLoop();
+                }
+            }
+
+            function drawPath(points) {
+                if (points.length < 2) return;
+                p.beginShape();
+                p.curveVertex(points[0].x, points[0].y);
+                for(const pt of points) {
+                    p.curveVertex(pt.x, pt.y);
+                }
+                p.curveVertex(points[points.length-1].x, points[points.length-1].y);
+                p.endShape();
+            }
+
+            function pattern1(grid, spacing) {
+                const s = spacing * 0.5;
+                const path = [
+                    { x: 0, y: -s }, { x: s, y: 0 }, { x: 0, y: s },
+                    { x: -s, y: 0 }, { x: 0, y: -s }
+                ];
+                grid.forEach(dot => {
+                    p.push();
+                    p.translate(dot.x, dot.y);
+                    drawPath(path);
+                    p.pop();
+                });
+            }
+
+            function pattern2(grid, spacing) {
+                 const s = spacing * 0.5;
+                 const path = [
+                    {x: -s, y: -s*2}, {x: -s, y: -s}, {x: s, y: s},
+                    {x: s, y: s*2}
+                 ];
+                 grid.forEach(dot => {
+                    p.push();
+                    p.translate(dot.x, dot.y);
+                    drawPath(path);
+                    p.rotate(p.PI/2);
+                    drawPath(path);
+                    p.pop();
+                 });
+            }
+
+            function pattern3(grid, spacing) {
+                const s = spacing * 0.5;
+                const path = [
+                    {x: -s, y: -s}, {x: 0, y: -s*2}, {x: s, y: -s}, {x: s*2, y: 0},
+                    {x: s, y: s}, {x: 0, y: s*2}, {x: -s, y: s}, {x: -s*2, y: 0},
+                    {x: -s, y: -s}
+                ];
+                 grid.forEach(dot => {
+                    p.push();
+                    p.translate(dot.x, dot.y);
+                    drawPath(path);
+                    p.pop();
+                 });
+            }
+
+            function pattern4(grid, spacing) {
+                const s = spacing * 0.5;
+                const path = [
+                    {x: 0, y: -s*2}, {x: s, y: -s}, {x: s*2, y: 0},
+                    {x: s, y: s}, {x: 0, y: s*2}, {x: -s, y: s},
+                    {x: -s*2, y: 0}, {x: -s, y: -s}, {x: 0, y: -s*2}
+                ];
+                 grid.forEach(dot => {
+                    p.push();
+                    p.translate(dot.x, dot.y);
+                    drawPath(path);
+                    p.pop();
+                 });
+            }
+        };
+        p5Instance = new p5(sketch);
+    </script>
+
+</body>
+</html>
+
