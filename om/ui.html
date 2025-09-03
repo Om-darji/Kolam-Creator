@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kolam Analyzer & Recreator</title>
+    <style>
+        /* CSS from your ui.html - no changes needed here */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #8B4513 0%, #A0522D 50%, #CD853F 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #8B4513, #A0522D, #CD853F, #D2B48C);
+            padding: 30px;
+            text-align: center;
+            color: #F5E6D3;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .upload-area {
+            margin-bottom: 30px;
+        }
+
+        .upload-zone {
+            border: 3px dashed rgba(160, 82, 45, 0.4);
+            border-radius: 20px;
+            padding: 40px;
+            background: rgba(245, 230, 211, 0.3);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .upload-zone:hover {
+            border-color: rgba(160, 82, 45, 0.6);
+            background: rgba(245, 230, 211, 0.5);
+        }
+
+        .upload-zone.dragover {
+            border-color: #A0522D;
+            background: rgba(160, 82, 45, 0.1);
+        }
+
+        .upload-content {
+            text-align: center;
+        }
+        
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .upload-content h3 {
+            color: #8B4513;
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        .upload-content p {
+            color: #6B3E1F;
+            margin-bottom: 20px;
+        }
+
+        .browse-btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            background: linear-gradient(135deg, #A0522D, #8B4513);
+            color: #F5E6D3;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .uploaded-image {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .uploaded-image img {
+            width: 100%;
+            height: auto;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 50%;
+            background: #ff4757;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .action-btn {
+            padding: 15px 40px;
+            border: none;
+            border-radius: 25px;
+            background: linear-gradient(135deg, #A0522D, #8B4513);
+            color: #F5E6D3;
+            font-weight: 600;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .action-btn:disabled {
+            background: rgba(160, 82, 45, 0.4);
+            cursor: not-allowed;
+        }
+        
+        .analysis-results, .recreation-results {
+            margin-top: 30px;
+            padding: 30px;
+            background: rgba(245, 230, 211, 0.3);
+            border-radius: 20px;
+            border: 2px solid rgba(160, 82, 45, 0.2);
+        }
+        
+        .analysis-results h3, .recreation-results h3 {
+            color: #8B4513;
+            font-size: 1.8rem;
+            margin-bottom: 25px;
+            text-align: center;
+        }
+
+        .results-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(160, 82, 45, 0.1);
+        }
+        
+        .result-label {
+            color: #6B3E1F;
+            font-weight: 600;
+        }
+
+        .result-value {
+            color: #8B4513;
+            font-weight: 700;
+        }
+        
+        .recreation-results img {
+            max-width: 100%;
+            border-radius: 15px;
+            border: 2px solid rgba(160, 82, 45, 0.2);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .main-content {
+             padding: 30px;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌸 Kolam Analyzer & Recreator 🌸</h1>
+            <p>Upload a Kolam image to analyze its design principles and recreate it.</p>
+        </div>
+
+        <div class="main-content">
+             <div class="upload-area">
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-content">
+                        <div class="upload-icon">📸</div>
+                        <h3>Upload Your Kolam Image</h3>
+                        <p>Drag and drop an image here, or click to browse</p>
+                        <input type="file" id="imageInput" accept="image/*" style="display: none;">
+                        <button class="browse-btn" onclick="document.getElementById('imageInput').click()">Browse Files</button>
+                    </div>
+                    <div class="uploaded-image" id="uploadedImage" style="display: none;">
+                        <img id="previewImage" alt="Uploaded kolam">
+                        <button class="remove-btn" onclick="removeImage()">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button class="action-btn" id="analyzeBtn" disabled onclick="startAnalysis()">Analyze Design</button>
+                <button class="action-btn" id="recreateBtn" disabled onclick="startRecreation()">Recreate Design</button>
+            </div>
+
+            <div class="analysis-results" id="analysisResults" style="display: none;">
+                <h3>Analysis Results</h3>
+                <div class="results-grid" id="resultsGrid">
+                    <!-- Analysis results will be dynamically inserted here -->
+                </div>
+            </div>
+            
+             <div class="recreation-results" id="recreationResults" style="display: none;">
+                <h3>Recreated Design</h3>
+                <div id="recreatedImageContainer" style="text-align: center;">
+                   <!-- Recreated image will be dynamically inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const FLASK_API_URL = 'http://127.0.0.1:5000';
+
+        // --- DOM Elements ---
+        const uploadZone = document.getElementById('uploadZone');
+        const imageInput = document.getElementById('imageInput');
+        const uploadContent = document.querySelector('.upload-content');
+        const uploadedImageContainer = document.getElementById('uploadedImage');
+        const previewImage = document.getElementById('previewImage');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const recreateBtn = document.getElementById('recreateBtn');
+        const analysisResultsContainer = document.getElementById('analysisResults');
+        const resultsGrid = document.getElementById('resultsGrid');
+        const recreationResultsContainer = document.getElementById('recreationResults');
+        const recreatedImageContainer = document.getElementById('recreatedImageContainer');
+        let currentFile = null;
+
+        // --- Event Listeners for Upload ---
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) handleImageUpload(files[0]);
+        });
+
+        uploadZone.addEventListener('click', () => {
+            if (!currentFile) imageInput.click();
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) handleImageUpload(e.target.files[0]);
+        });
+        
+        // --- Core Functions ---
+        function handleImageUpload(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Please upload an image file.');
+                return;
+            }
+            currentFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                uploadContent.style.display = 'none';
+                uploadedImageContainer.style.display = 'block';
+                analyzeBtn.disabled = false;
+                recreateBtn.disabled = false;
+                uploadZone.style.cursor = 'default';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removeImage(event) {
+            if(event) event.stopPropagation(); // Prevent re-triggering the file input
+            currentFile = null;
+            uploadContent.style.display = 'block';
+            uploadedImageContainer.style.display = 'none';
+            previewImage.src = '';
+            imageInput.value = '';
+            analyzeBtn.disabled = true;
+            recreateBtn.disabled = true;
+            uploadZone.style.cursor = 'pointer';
+            analysisResultsContainer.style.display = 'none';
+            recreationResultsContainer.style.display = 'none';
+        }
+
+        async function startAnalysis() {
+            if (!currentFile) return;
+
+            analyzeBtn.textContent = 'Analyzing...';
+            analyzeBtn.disabled = true;
+            recreateBtn.disabled = true;
+            
+            const formData = new FormData();
+            formData.append('image', currentFile);
+
+            try {
+                const response = await fetch(`${FLASK_API_URL}/analyze`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const results = await response.json();
+                displayAnalysisResults(results);
+
+            } catch (error) {
+                console.error("Error during analysis:", error);
+                alert("An error occurred during analysis. Check the console for details.");
+            } finally {
+                analyzeBtn.textContent = 'Analyze Design';
+                analyzeBtn.disabled = false;
+                recreateBtn.disabled = false;
+            }
+        }
+        
+        async function startRecreation() {
+            if (!currentFile) return;
+
+            recreateBtn.textContent = 'Recreating...';
+            analyzeBtn.disabled = true;
+            recreateBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('image', currentFile);
+            
+            try {
+                 const response = await fetch(`${FLASK_API_URL}/recreate`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const imageBlob = await response.blob();
+                const imageUrl = URL.createObjectURL(imageBlob);
+                displayRecreatedImage(imageUrl);
+
+            } catch (error) {
+                console.error("Error during recreation:", error);
+                alert("An error occurred during recreation. Check the console for details.");
+            } finally {
+                recreateBtn.textContent = 'Recreate Design';
+                analyzeBtn.disabled = false;
+                recreateBtn.disabled = false;
+            }
+        }
+
+        function displayAnalysisResults(results) {
+            resultsGrid.innerHTML = ''; // Clear previous results
+            
+            const principles = {
+                "Dot Count": results.dot_count,
+                "Contour Count": results.contour_count,
+                "Grid Size": `${results.grid.rows} x ${results.grid.cols}`,
+                "Is Symmetric": results.is_symmetric ? "Yes" : "No",
+            };
+
+            for (const [key, value] of Object.entries(principles)) {
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `<span class="result-label">${key}:</span> <span class="result-value">${value}</span>`;
+                resultsGrid.appendChild(item);
+            }
+            analysisResultsContainer.style.display = 'block';
+            recreationResultsContainer.style.display = 'none'; // Hide recreation if showing analysis
+        }
+        
+        function displayRecreatedImage(imageUrl) {
+            recreatedImageContainer.innerHTML = ''; // Clear previous image
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            recreatedImageContainer.appendChild(img);
+            recreationResultsContainer.style.display = 'block';
+            analysisResultsContainer.style.display = 'none'; // Hide analysis if showing recreation
+        }
+
+    </script>
+</body>
+</html>
